@@ -1,0 +1,53 @@
+sequenceDiagram
+    autonumber
+    actor U as کاربر
+    participant UI as app.py
+    participant R as agent/router
+    participant L as Ollama (Qwen)
+    participant T as agent/tools
+    participant S as solver/service
+    participant E as solver/engine
+    participant D as db/repo (SQLite)
+
+    U->>UI: پیام در چت
+    UI->>R: handle(text, ctx)
+
+    alt درخواست در انتظار تأیید و پیام بله یا نه
+        R->>T: execute_pending یا cancel
+    else پیام جدید
+        R->>L: chat(system + history + tools)
+        L-->>R: tool_calls یا پاسخ متنی
+        alt بدون فراخوانی ابزار
+            R-->>UI: پاسخ گفتگو
+        else فراخوانی ابزار
+            R->>R: اعتبارسنجی و تبدیل آرگومان‌ها
+            R->>T: handler(ctx, args)
+            T->>D: resolver: نگاشت نام رشته، درس، استاد
+            alt اطلاعات ناقص یا مبهم
+                T-->>R: Ask(سؤال روشن‌سازی)
+                R-->>UI: پرسش از کاربر
+            else برنامه‌ی قبلی وجود دارد
+                T-->>R: pending (درخواست تأیید)
+                R-->>UI: ادامه بدهم؟
+                U->>UI: بله
+                UI->>R: handle(بله)
+                R->>T: execute_pending
+            end
+        end
+    end
+
+    T->>S: schedule(semester, majors, terms)
+    S->>D: build_problem: چارت، اساتید، کلاس‌ها، جلسه‌های قفل‌شده
+    S->>E: solve(problem)
+    E->>E: چیدمان ابتکاری (جواب اولیه)
+    E->>E: CP-SAT با hint و مهلت زمانی
+    E->>E: verify_rows (بازبینی تداخل و قیدها)
+    E-->>S: Solution (بهترین جواب معتبر)
+    S->>S: verify_rows نهایی
+    S->>D: replace_sessions (لاگ برای Undo + تراکنش اتمی)
+    D-->>S: تعداد جلسه‌های ذخیره‌شده
+    S-->>T: ScheduleResult
+    T-->>R: Out (متن قالب‌بندی‌شده، refresh)
+    R-->>UI: Reply
+    UI->>D: خواندن جلسه‌ها
+    UI-->>U: جدول هفتگی و پاسخ چت
